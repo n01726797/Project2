@@ -1,0 +1,52 @@
+<%- include('partials/header') %>
+
+<h1>MyBooks</h1>
+
+<form method="GET" action="/">
+  <input
+    name="q"
+    placeholder="Title / Author / ISBN"
+    value="<%= searchTerm %>"
+  >
+  <input
+    type="hidden"
+    name="genre"
+    value="<%= genreFilter %>"
+  >
+  <button>Search</button>
+</form>
+
+<h2>Browse by Genre</h2>
+<ul class="genres">
+  <% genres.forEach(g => { %>
+    <li>
+      <a href="/?genre=<%= encodeURIComponent(g) %>"><%= g %></a>
+    </li>
+  <% }) %>
+</ul>
+
+<h2>Quote of the Moment</h2>
+<blockquote>
+  “<%= randomQuote.text %>”
+  <footer>— <em><%= randomQuote.author %></em></footer>
+</blockquote>
+
+<h2>Results</h2>
+<div class="grid">
+  <% if (!books.length) { %>
+    <p>No books match your criteria.</p>
+  <% } else { %>
+    <% books.forEach(b => { %>
+      <div class="card">
+        <a href="/book/<%= b.id %>">
+          <img src="<%= b.thumbnail %>" alt="">
+          <h3><%= b.title %></h3>
+          <p><em><%= b.author %></em></p>
+          <p><small><%= b.genre %></small></p>
+        </a>
+      </div>
+    <% }) %>
+  <% } %>
+</div>
+
+<%- include('partials/footer') %>

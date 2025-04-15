@@ -1,0 +1,53 @@
+<%- include('partials/header') %>
+
+<div class="container">
+  <div class="detail-container">
+    <img src="<%= book.thumbnail %>" alt="">
+    <div class="detail-info">
+      <h1><%= book.title %></h1>
+      <p><strong>Author:</strong> <%= book.author %></p>
+      <p><strong>Genre:</strong> <%= book.genre %></p>
+      <p><strong>ISBN:</strong> <%= book.isbn %></p>
+      <p><%= book.description %></p>
+
+      <form method="POST" action="/book/<%= book.id %>/want">
+        <button type="submit" class="want-btn">
+          <%= want ? 'Remove from To‑Read' : 'Add to To‑Read' %>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <section class="review-section">
+    <h2>Reviews & Ratings</h2>
+    <% if (!reviews.length) { %>
+      <p>No reviews yet.</p>
+    <% } %>
+    <% reviews.forEach(r => { %>
+      <div class="review">
+        <p><strong><%= r.user %></strong> (<%= r.date %>) — <%= r.rating %>/5</p>
+        <p><%= r.text %></p>
+      </div>
+    <% }) %>
+
+    <div class="review-form">
+      <h3>Leave a Review</h3>
+      <form method="POST" action="/book/<%= book.id %>/review">
+        <input name="user" placeholder="Your name" required>
+        <textarea name="text" placeholder="Your review" required></textarea>
+        <label>Rating:
+          <select name="rating">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>/5
+        </label>
+        <button type="submit">Submit</button>
+      </form>
+    </div>
+  </section>
+</div>
+
+<%- include('partials/footer') %>

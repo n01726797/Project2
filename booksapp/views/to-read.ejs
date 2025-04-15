@@ -1,0 +1,29 @@
+<%- include('partials/header') %>
+<div class="container">
+  <h1><%= title %></h1>
+
+  <% if (books.length === 0) { %>
+    <p>Your To‑Read list is empty.</p>
+  <% } else { %>
+    <div class="grid">
+      <% books.forEach(b => { %>
+        <div class="card">
+          <a href="/book/<%= b.id %>">
+            <img src="<%= b.thumbnail %>" alt="">
+          </a>
+          <div style="padding:0.5rem">
+            <h3><a href="/book/<%= b.id %>"><%= b.title %></a></h3>
+            <p><em><%= b.author %></em></p>
+            <p><small><%= b.genre %></small></p>
+            <form method="POST" action="/to-read/<%= b.id %>/remove">
+              <button type="submit" style="background:none;border:none;color:#c00;cursor:pointer">
+                Remove from To‑Read
+              </button>
+            </form>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  <% } %>
+</div>
+<%- include('partials/footer') %>
