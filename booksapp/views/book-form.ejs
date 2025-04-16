@@ -1,0 +1,15 @@
+<%- include('partials/header') %>
+<div class="container">
+  <h1><%= title %></h1>
+  <form method="POST" action="<%= action %>">
+    <label>Google ID<input name="google_id" value="<%= book.google_id||'' %>" required></label>
+    <label>Title<input name="title" value="<%= book.title||'' %>" required></label>
+    <label>Author<input name="author" value="<%= book.author||'' %>"></label>
+    <label>ISBN<input name="isbn" value="<%= book.isbn||'' %>"></label>
+    <label>Genre<input name="genre" value="<%= book.genre||'' %>"></label>
+    <label>Description<textarea name="description"><%= book.description||'' %></textarea></label>
+    <label>Thumbnail URL<input name="thumbnail" value="<%= book.thumbnail||'' %>"></label>
+    <button type="submit"><%= submitLabel %></button>
+  </form>
+</div>
+<%- include('partials/footer') %>

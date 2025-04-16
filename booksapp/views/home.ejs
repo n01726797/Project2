@@ -27,9 +27,10 @@
 
 <h2>Quote of the Moment</h2>
 <blockquote>
-  “<%= randomQuote.text %>”
-  <footer>— <em><%= randomQuote.author %></em></footer>
+  “<%= (randomQuote && randomQuote.text) ? randomQuote.text : 'No quote available.' %>”
+  <footer>— <em><%= (randomQuote && randomQuote.author) ? randomQuote.author : 'Unknown' %></em></footer>
 </blockquote>
+
 
 <h2>Results</h2>
 <div class="grid">

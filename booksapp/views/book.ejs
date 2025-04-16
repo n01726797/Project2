@@ -17,7 +17,13 @@
       </form>
     </div>
   </div>
-
+  <form method="GET" action="/books/<%= book.id %>/edit" style="display:inline">
+    <button type="submit">Edit</button>
+  </form>
+  <form method="POST" action="/books/<%= book.id %>/delete" style="display:inline">
+    <button type="submit" onclick="return confirm('Delete this book?')">Delete</button>
+  </form>
+  
   <section class="review-section">
     <h2>Reviews & Ratings</h2>
     <% if (!reviews.length) { %>
@@ -29,7 +35,8 @@
         <p><%= r.text %></p>
       </div>
     <% }) %>
-
+   
+    
     <div class="review-form">
       <h3>Leave a Review</h3>
       <form method="POST" action="/book/<%= book.id %>/review">

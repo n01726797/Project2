@@ -1,22 +1,25 @@
+// routes/index.js
 const express = require('express');
-const fetch   = require('node-fetch');
+const db      = require('../db');
+const fs      = require('fs');
+const path    = require('path');
 const router  = express.Router();
-const db = require('../db');
 
-// In‑memory stores
-const fs   = require('fs');
-const path = require('path');
+
+// Persisted reviews
 const REVIEWS_FILE = path.join(__dirname, '..', 'reviews.json');
-
 let reviews = {};
 try {
   reviews = JSON.parse(fs.readFileSync(REVIEWS_FILE));
 } catch {
   reviews = {};
 }
+
+// In‑memory to‑read set
 let wantToRead = new Set();
 
-// Sample genres and quotes
+// Static genres & quotes
+// Static genres & quotes
 const genres = [
   'Art','Biography','Business',"Children's",'Christian','Classics','Comics','Cookbooks','Ebooks',
   'Fantasy','Fiction','Graphic Novels','Historical Fiction','History','Horror','Memoir','Music',
@@ -24,95 +27,67 @@ const genres = [
   'Sports','Thriller','Travel','Young Adult'
 ];
 const quotes = [
-  { text:'Be yourself; everyone else is already taken.', author:'Oscar Wilde' },
-  { text:'Not all those who wander are lost.', author:'J.R.R. Tolkien' },
-  // …add more…
+  { text: 'Be yourself; everyone else is already taken.', author: 'Oscar Wilde' },
+  { text: 'Not all those who wander are lost.', author: 'J.R.R. Tolkien' },
+  // …etc.
 ];
 
-// Helper to map Google Books API data to our shape
-function mapVolumeToBook(vol) {
-  const info = vol.volumeInfo || {};
-  return {
-    id:          vol.id,
-    title:       info.title || 'No title',
-    author:      (info.authors || []).join(', '),
-    isbn:        (info.industryIdentifiers || []).map(i=>i.identifier).join(', '),
-    genre:       (info.categories || ['Unknown'])[0],
-    description: info.description || 'No description available.',
-    thumbnail:   info.imageLinks?.thumbnail || '/images/placeholder.png'
+// Home: READ all books, filter, and show random quote
+router.get('/', async (req, res, next) => {
+  try {
+    // READ: fetch all books from DB
+    const { rows: allBooks } = await db.query('SELECT * FROM books');
+
+    // Apply search & genre filters in memory
+    const q     = (req.query.q     || '').toLowerCase();
+    const genre = (req.query.genre || '').toLowerCase();
+    let books = allBooks;
+    if (q) {
+      books = books.filter(b =>
+        b.title.toLowerCase().includes(q) ||
+        b.author.toLowerCase().includes(q) ||
+        b.isbn.includes(q)
+      );
+    }
+    if (genre) {
+      books = books.filter(b => b.genre.toLowerCase() === genre);
+    }
+
+ // After filtering books array:
+let randomQuote = { text: 'No quote available.', author: '' };
+if (books.length > 0) {
+  // Pick a random book
+  const book = books[Math.floor(Math.random() * books.length)];
+  // Use its description (first sentence) as the quote
+  const desc = book.description || '';
+  const firstSentence = desc.split(/\. |\.$/)[0];
+  randomQuote = {
+    text: firstSentence.length > 0 ? firstSentence : book.title,
+    author: book.author
   };
 }
 
-router.get('/', async (req, res, next) => {
-  console.log('--- Home Route Debug ---');
-  console.log('Query:', req.query);
-
-  const q     = req.query.q     || '';
-  const genre = req.query.genre || '';
-
-  console.log('Search term:', q);
-  console.log('Genre filter:', genre);
-
-  try {
-    // Default query logic
-    let query;
-    if (!q && !genre) {
-      query = 'subject:Fiction';
-    } else {
-      query = q;
-      if (genre) {
-        query += (q ? '+' : '') + `subject:${genre}`;
-      }
-    }
-
-    console.log('Using query:', query);
-    const url   = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=20`;
-    console.log('Fetching URL:', url);
-
-    const apiRes = await fetch(url);
-    if (!apiRes.ok) throw new Error(`Google API status ${apiRes.status}`);
-    const data = await apiRes.json();
-    const items = data.items || [];
-    console.log('API returned items:', items.length);
-
-    const books = items.map(vol => {
-      const info = vol.volumeInfo || {};
-      return {
-        id:    vol.id,
-        title: info.title || 'No title',
-        author:(info.authors || []).join(', '),
-        genre: (info.categories || ['Unknown'])[0],
-        isbn:  (info.industryIdentifiers||[]).map(i=>i.identifier).join(', '),
-        thumbnail: info.imageLinks?.thumbnail || '/images/placeholder.png'
-      };
-    });
-    console.log('Mapped books:', books.length);
-
-    const randomQuote = quotes[Math.floor(Math.random()*quotes.length)];
-    console.log('Random quote:', randomQuote);
 
     res.render('home', {
       title:       'Home',
       books,
       genres,
       randomQuote,
-      searchTerm:  q,
-      genreFilter: genre
+      searchTerm:  req.query.q || '',
+      genreFilter: req.query.genre || ''
     });
   } catch (err) {
-    console.error('Home route error:', err);
     next(err);
   }
 });
 
-// Book detail
+// Detail: READ one book
 router.get('/book/:id', async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const url    = `https://www.googleapis.com/books/v1/volumes/${id}`;
-    const apiRes = await fetch(url);
-    const json   = await apiRes.json();
-    const book   = mapVolumeToBook(json);
+    const id = parseInt(req.params.id, 10);
+    const { rows } = await db.query('SELECT * FROM books WHERE id=$1', [id]);
+    const book = rows[0];
+    if (!book) return res.status(404).render('404', { title: 'Not Found' });
 
     res.render('book', {
       title:   book.title,
@@ -124,66 +99,168 @@ router.get('/book/:id', async (req, res, next) => {
     next(err);
   }
 });
-// To‑Read list page (full details)
-router.get('/to-read', async (req, res, next) => {
-  try {
-    // wantToRead is a Set of volume IDs
-    const ids = Array.from(wantToRead);
-    // Fetch details for each ID in parallel
-    const promises = ids.map(id =>
-      fetch(`https://www.googleapis.com/books/v1/volumes/${id}`)
-        .then(r => r.json())
-        .then(json => mapVolumeToBook(json))
-    );
-    const books = await Promise.all(promises);
 
-    res.render('to-read', {
-      title: 'My To‑Read List',
-      books
+// Create: SHOW form (optional admin)
+// router.get('/books/new', (req,res)=> res.render('new-book', { title:'Add Book' }));
+
+// Create: CREATE a new book record
+router.post('/books', async (req, res, next) => {
+  try {
+    const { google_id, title, author, isbn, genre, description, thumbnail } = req.body;
+    await db.query(
+      `INSERT INTO books (google_id,title,author,isbn,genre,description,thumbnail)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [google_id, title, author, isbn, genre, description, thumbnail]
+    );
+    res.redirect('/');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Update: SHOW edit form (optional admin)
+// router.get('/books/:id/edit', async (req,res,next)=>{ /* fetch and render */ });
+
+// Update: UPDATE a book
+router.post('/books/:id/edit', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { title, author, isbn, genre, description, thumbnail } = req.body;
+    await db.query(
+      `UPDATE books
+       SET title=$1, author=$2, isbn=$3, genre=$4, description=$5, thumbnail=$6
+       WHERE id=$7`,
+      [title, author, isbn, genre, description, thumbnail, id]
+    );
+    res.redirect(`/book/${id}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Delete: DELETE a book
+router.post('/books/:id/delete', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    await db.query('DELETE FROM books WHERE id=$1', [id]);
+    res.redirect('/');
+  } catch (err) {
+    next(err);
+  }
+});
+// Show “Add Book” form
+router.get('/books/new', (req, res) => {
+  res.render('book-form', {
+    title: 'Add Book',
+    book: {},        // empty object for the form
+    action: '/books',
+    submitLabel: 'Create'
+  });
+});
+
+// Handle “Add Book” submission
+router.post('/books', async (req, res, next) => {
+  try {
+    const { google_id, title, author, isbn, genre, description, thumbnail } = req.body;
+    await db.query(
+      `INSERT INTO books (google_id,title,author,isbn,genre,description,thumbnail)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [google_id, title, author, isbn, genre, description, thumbnail]
+    );
+    res.redirect('/');
+  } catch (err) {
+    next(err);
+  }
+});
+// Show “Edit Book” form
+router.get('/books/:id/edit', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id,10);
+    const { rows } = await db.query('SELECT * FROM books WHERE id=$1', [id]);
+    const book = rows[0];
+    if (!book) return res.status(404).render('404', { title: 'Not Found' });
+
+    res.render('book-form', {
+      title: 'Edit Book',
+      book,
+      action: `/books/${id}/edit`,
+      submitLabel: 'Update'
     });
   } catch (err) {
-    console.error('Error in /to-read:', err);
+    next(err);
+  }
+});
+
+// Handle “Edit Book” submission
+router.post('/books/:id/edit', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id,10);
+    const { title, author, isbn, genre, description, thumbnail } = req.body;
+    await db.query(
+      `UPDATE books SET title=$1,author=$2,isbn=$3,genre=$4,description=$5,thumbnail=$6
+       WHERE id=$7`,
+      [title, author, isbn, genre, description, thumbnail, id]
+    );
+    res.redirect(`/book/${id}`);
+  } catch (err) {
+    next(err);
+  }
+});
+// Handle “Delete Book”
+router.post('/books/:id/delete', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id,10);
+    await db.query('DELETE FROM books WHERE id=$1', [id]);
+    res.redirect('/');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Toggle Want‑to‑Read (in‑memory)
+router.post('/book/:id/want', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  wantToRead.has(id) ? wantToRead.delete(id) : wantToRead.add(id);
+  res.redirect(`/book/${id}`);
+});
+
+// Submit review (in‑memory + persisted to JSON)
+router.post('/book/:id/review', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { user, text, rating } = req.body;
+  if (!reviews[id]) reviews[id] = [];
+  reviews[id].push({
+    user,
+    text,
+    rating: Number(rating),
+    date: new Date().toLocaleString()
+  });
+  fs.writeFileSync(REVIEWS_FILE, JSON.stringify(reviews, null, 2));
+  res.redirect(`/book/${id}`);
+});
+
+// To‑Read list: READ selected books
+router.get('/to-read', async (req, res, next) => {
+  try {
+    const ids = Array.from(wantToRead);
+    if (ids.length === 0) {
+      return res.render('to-read', { title: 'My To‑Read List', books: [] });
+    }
+    const { rows: books } = await db.query(
+      `SELECT * FROM books WHERE id = ANY($1::int[])`,
+      [ids]
+    );
+    res.render('to-read', { title: 'My To‑Read List', books });
+  } catch (err) {
     next(err);
   }
 });
 
 // Remove from To‑Read
 router.post('/to-read/:id/remove', (req, res) => {
-  wantToRead.delete(req.params.id);
+  const id = parseInt(req.params.id, 10);
+  wantToRead.delete(id);
   res.redirect('/to-read');
-});
-
-// Remove from To‑Read
-router.post('/to-read/:id/remove', (req, res) => {
-  try {
-    wantToRead.delete(req.params.id);
-    res.redirect('/to-read');
-  } catch (err) {
-    console.error('Error removing from to-read:', err);
-    res.status(500).send('Server Error');
-  }
-});
-
-
-// Toggle Want‑to‑Read
-router.post('/book/:id/want', (req, res) => {
-  const id = req.params.id;
-  if (wantToRead.has(id)) wantToRead.delete(id);
-  else wantToRead.add(id);
-  res.redirect(`/book/${id}`);
-});
-
-// Submit review + rating
-router.post('/book/:id/review', (req, res) => {
-  const { user, text, rating } = req.body;
-  if (!reviews[req.params.id]) reviews[req.params.id] = [];
-  reviews[req.params.id].push({
-    user,
-    text,
-    rating: Number(rating),
-    date: new Date().toLocaleString()
-  });
-  res.redirect(`/book/${req.params.id}`);
 });
 
 // Static pages
