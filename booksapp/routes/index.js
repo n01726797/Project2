@@ -7,13 +7,13 @@ const router  = express.Router();
 
 
 // Persisted reviews
-const REVIEWS_FILE = path.join(__dirname, '..', 'reviews.json');
-let reviews = {};
-try {
-  reviews = JSON.parse(fs.readFileSync(REVIEWS_FILE));
-} catch {
-  reviews = {};
-}
+const { rows: reviews } = await db.query(
+  `SELECT username, text, rating, created_at
+   FROM reviews WHERE book_id=$1
+   ORDER BY created_at DESC`,
+  [bookId]
+);
+
 
 // In‑memory to‑read set
 let wantToRead = new Set();
@@ -217,27 +217,36 @@ router.post('/books/:id/delete', async (req, res, next) => {
   }
 });
 
-// Toggle Want‑to‑Read (in‑memory)
-router.post('/book/:id/want', (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  wantToRead.has(id) ? wantToRead.delete(id) : wantToRead.add(id);
-  res.redirect(`/book/${id}`);
+// Toggle Want‑to‑Read (persistent)
+router.post('/book/:id/want', async (req, res, next) => {
+  const bookId = parseInt(req.params.id, 10);
+  const userId = 'default';
+  try {
+    // Check if exists
+    const { rowCount } = await db.query(
+      'SELECT 1 FROM to_read WHERE user_id=$1 AND book_id=$2',
+      [userId, bookId]
+    );
+    if (rowCount) {
+      // remove
+      await db.query(
+        'DELETE FROM to_read WHERE user_id=$1 AND book_id=$2',
+        [userId, bookId]
+      );
+    } else {
+      // add
+      await db.query(
+        'INSERT INTO to_read (user_id, book_id) VALUES ($1,$2)',
+        [userId, bookId]
+      );
+    }
+    res.redirect(`/book/${bookId}`);
+  } catch (err) {
+    next(err);
+  }
 });
 
-// Submit review (in‑memory + persisted to JSON)
-router.post('/book/:id/review', (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const { user, text, rating } = req.body;
-  if (!reviews[id]) reviews[id] = [];
-  reviews[id].push({
-    user,
-    text,
-    rating: Number(rating),
-    date: new Date().toLocaleString()
-  });
-  fs.writeFileSync(REVIEWS_FILE, JSON.stringify(reviews, null, 2));
-  res.redirect(`/book/${id}`);
-});
+
 
 // To‑Read list: READ selected books
 router.get('/to-read', async (req, res, next) => {
